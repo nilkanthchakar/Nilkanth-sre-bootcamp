@@ -54,6 +54,7 @@ make compose-build
 ```sh
 make build
 make test
+make lint
 ```
 
 ## Docker
@@ -81,6 +82,33 @@ If you want to run the API container directly:
 ```sh
 docker run --rm -p 8080:8080 --env-file .env student-api:0.1.0
 ```
+
+## CI Pipeline
+
+The repository includes a GitHub Actions workflow that runs on a self-hosted runner.
+
+The pipeline stages are:
+
+- Build API (`make build`)
+- Run tests (`make test`)
+- Perform code linting (`make lint`)
+- Docker Hub login and push
+
+The workflow triggers on changes to source code and build files only, including:
+
+- `src/**`
+- `pom.xml`
+- `Dockerfile`
+- `Makefile`
+
+It also supports manual dispatch from the GitHub Actions UI.
+
+### Docker Hub secrets
+
+Set the following repository secrets before running the workflow:
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
 
 ## API Endpoints
 

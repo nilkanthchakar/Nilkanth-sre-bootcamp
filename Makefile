@@ -33,6 +33,9 @@ compose-down:
 	@echo "Stopping services and removing volumes"
 	docker compose down -v
 
+lint:
+	mvn -B checkstyle:check
+
 test:
 	mvn -B test
 
