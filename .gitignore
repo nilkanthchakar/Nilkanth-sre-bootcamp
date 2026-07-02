@@ -1,0 +1,26 @@
+.idea/
+*.iml
+*.log
+target/
+*.class
+*.jar
+*.war
+*.ear
+/.mvn/wrapper/maven-wrapper.jar
+!/.mvn/wrapper/maven-wrapper.properties
+.gradle/
+build/
+*.db
+*.sqlite
+.DS_Store
+.env
+
+# IntelliJ
+out/
+
+# Eclipse
+.settings/
+.project
+
+# Mac
+*.DS_Store
