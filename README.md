@@ -83,6 +83,40 @@ If you want to run the API container directly:
 docker run --rm -p 8080:8080 --env-file .env student-api:0.1.0
 ```
 
+## Vagrant deployment
+
+The production-like deployment uses Vagrant with Docker Compose and Nginx load balancing.
+
+Start the Vagrant box:
+
+```sh
+make vagrant-up
+```
+
+Provision the box and deploy services:
+
+```sh
+make vagrant-provision
+```
+
+Access the API at:
+
+```sh
+http://localhost:8080/api/v1/students
+```
+
+Stop the Vagrant box:
+
+```sh
+make vagrant-halt
+```
+
+Destroy the Vagrant box:
+
+```sh
+make vagrant-destroy
+```
+
 ## CI Pipeline
 
 The repository includes a GitHub Actions workflow that runs on a self-hosted runner.

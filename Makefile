@@ -33,6 +33,26 @@ compose-down:
 	@echo "Stopping services and removing volumes"
 	docker compose down -v
 
+vagrant-up:
+	@echo "Starting Vagrant production environment"
+	vagrant up
+
+vagrant-provision:
+	@echo "Provisioning Vagrant box and deploying stack"
+	vagrant provision
+
+vagrant-halt:
+	@echo "Stopping Vagrant environment"
+	vagrant halt
+
+vagrant-destroy:
+	@echo "Destroying Vagrant environment"
+	vagrant destroy -f
+
+deploy-vagrant:
+	@echo "Deploying services inside Vagrant"
+	cd /vagrant && docker compose -f docker-compose.vagrant.yml up -d
+
 lint:
 	mvn -B checkstyle:check
 
@@ -41,3 +61,21 @@ test:
 
 clean:
 	mvn -B clean
+
+minikube-start:
+	@echo "Starting Minikube cluster"
+	minikube start --driver=docker --nodes=4
+
+minikube-add-labels:
+	@echo "Adding labels to Minikube nodes"
+	kubectl label node minikube-m02 type=application
+	kubectl label node minikube-m03 type=database
+	kubectl label node minikube-m04 type=dependent_services
+
+minikube-stop:
+	@echo "Stopping Minikube cluster"
+	minikube stop
+
+minikube-delete:
+	@echo "Deleting Minikube cluster"
+	minikube delete	
