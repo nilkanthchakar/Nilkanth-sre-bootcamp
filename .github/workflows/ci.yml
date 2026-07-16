@@ -81,7 +81,7 @@ jobs:
           LINT_STEP: ${{ steps.lint.outcome }}
           VULN_STEP: ${{ steps.vuln.outcome }}
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import os
           import re
           from pathlib import Path
@@ -138,7 +138,7 @@ jobs:
         env:
           CURRENT_SCORE: ${{ steps.quality_score.outputs.quality_score }}
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import os
           import pathlib
 
