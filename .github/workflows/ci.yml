@@ -56,11 +56,21 @@ jobs:
         continue-on-error: true
         run: make lint
 
+      - name: Build Docker image for scan
+        run: |
+          docker build --build-arg JAR_FILE=target/${IMAGE_NAME}-${IMAGE_VERSION}.jar -t ${IMAGE_NAME}:${IMAGE_VERSION} .
+
       - name: Run vulnerability scan
         id: vuln
         continue-on-error: true
         run: |
-          mvn -B org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7 -DskipTests -Dformat=ALL
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.53.0 image \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --output target/trivy-results.txt \
+            --exit-code 0 \
+            ${IMAGE_NAME}:${IMAGE_VERSION}
 
       - name: Generate quality score
         id: quality_score
@@ -82,11 +92,11 @@ jobs:
           vuln_ok = os.getenv("VULN_STEP") == "success"
 
           severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
-          report = Path("target/dependency-check-report.xml")
+          report = Path("target/trivy-results.txt")
           if report.exists():
               content = report.read_text(encoding="utf-8", errors="ignore")
               for severity in severity_counts:
-                  severity_counts[severity] = len(re.findall(rf"<severity>{severity}</severity>", content, flags=re.IGNORECASE))
+                  severity_counts[severity] = len(re.findall(rf"{severity}", content, flags=re.IGNORECASE))
 
           total_vulns = sum(severity_counts.values())
 
@@ -152,8 +162,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dependency-check-report
-          path: target/dependency-check-report.*
+          name: trivy-report
+          path: target/trivy-results.txt
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
