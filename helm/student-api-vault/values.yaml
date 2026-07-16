@@ -1,0 +1,71 @@
+namespaces:
+  create: true
+  vault: vault
+  studentApi: student-api
+
+vault:
+  image: hashicorp/vault:1.15.3
+  replicaCount: 1
+  nodeSelector:
+    type: dependent_services
+  serviceAccountName: vault-auth
+  rootToken: root
+  address: http://vault.vault.svc.cluster.local:8200
+  service:
+    name: vault
+    type: ClusterIP
+    port: 8200
+  auth:
+    role: student-api
+    policy: student-api
+    ttl: 1h
+    serviceAccountNames:
+      - student-api-sa
+    serviceAccountNamespaces:
+      - student-api
+  secretPath: secret/data/student-api/db-credentials
+  agentConfig: |-
+    pid_file = "/tmp/vault-agent-pid"
+
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "__VAULT_ROLE__"
+        }
+      }
+
+      sink "file" {
+        config = {
+          path = "/vault/secrets/creds.env"
+        }
+      }
+    }
+
+    vault {
+      address = "__VAULT_ADDR__"
+    }
+
+    template {
+      destination = "/vault/secrets/creds.env"
+      contents = <<EOH
+    {{ with secret "__VAULT_SECRET_PATH__" }}
+    SPRING_DATASOURCE_USERNAME={{ .Data.data.username }}
+    SPRING_DATASOURCE_PASSWORD={{ .Data.data.password }}
+    SPRING_DATASOURCE_URL=jdbc:postgresql://student-db:5432/studentdb
+    {{ end }}
+    EOH
+    }
+  seed:
+    enabled: true
+    username: postgres
+    password: mysecretpassword
+
+studentApi:
+  enabled: true
+  image: student-api:0.1.0
+  serviceAccountName: student-api-sa
+  nodeSelector:
+    type: application
+  port: 8080
+  agentImage: hashicorp/vault:1.15.3

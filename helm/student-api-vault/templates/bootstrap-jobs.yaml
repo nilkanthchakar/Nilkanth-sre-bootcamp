@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-enable-k8s-auth
+  namespace: {{ .Values.namespaces.vault }}
+spec:
+  template:
+    spec:
+      serviceAccountName: {{ .Values.vault.serviceAccountName }}
+      containers:
+        - name: enable-k8s-auth
+          image: {{ .Values.vault.image }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              export VAULT_ADDR={{ .Values.vault.address }}
+              echo "Configuring Vault Kubernetes auth"
+              vault login {{ .Values.vault.rootToken }}
+              vault auth enable kubernetes || true
+              vault write auth/kubernetes/config \
+                token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                kubernetes_host="https://kubernetes.default.svc" \
+                kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+              vault policy write {{ .Values.vault.auth.policy }} /tmp/policies/student-api-policy.hcl
+              vault write auth/kubernetes/role/{{ .Values.vault.auth.role }} \
+                bound_service_account_names={{- range $index, $serviceAccount := .Values.vault.auth.serviceAccountNames }}{{ if $index }},{{ end }}{{ $serviceAccount }}{{- end }} \
+                bound_service_account_namespaces={{- range $index, $namespace := .Values.vault.auth.serviceAccountNamespaces }}{{ if $index }},{{ end }}{{ $namespace }}{{- end }} \
+                policies={{ .Values.vault.auth.policy }} \
+                ttl={{ .Values.vault.auth.ttl }}
+          volumeMounts:
+            - name: vault-policy
+              mountPath: /tmp/policies
+      volumes:
+        - name: vault-policy
+          configMap:
+            name: vault-policy
+      restartPolicy: OnFailure
+  backoffLimit: 3
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-seed-db-credentials
+  namespace: {{ .Values.namespaces.vault }}
+spec:
+  template:
+    spec:
+      containers:
+        - name: seed
+          image: curlimages/curl:8.1.2
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Seeding Vault with DB credentials"
+              curl --fail -s -X POST \
+                -H "X-Vault-Token: {{ .Values.vault.rootToken }}" \
+                -H "Content-Type: application/json" \
+                --data '{"data": {"username":"{{ .Values.vault.seed.username }}","password":"{{ .Values.vault.seed.password }}"}}' \
+                {{ .Values.vault.address }}/v1/secret/data/student-api/db-credentials
+      restartPolicy: OnFailure
+  backoffLimit: 4

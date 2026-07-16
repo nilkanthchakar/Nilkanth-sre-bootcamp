@@ -20,6 +20,7 @@ spec:
       initContainers:
         - name: migrate
           image: postgres:16
+          imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
                 name: student-db-credentials
@@ -35,11 +36,24 @@ spec:
       containers:
         - name: student-api
           image: student-api:0.1.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           env:
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:postgresql://student-db:5432/studentdb"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: student-db-credentials
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: student-db-credentials
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
             - name: SERVER_PORT
               value: "8080"
           envFrom:
