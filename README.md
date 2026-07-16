@@ -117,6 +117,34 @@ Destroy the Vagrant box:
 make vagrant-destroy
 ```
 
+## Helm-based Vault deployment
+
+A Helm chart is available at [helm/student-api-vault](helm/student-api-vault) to install the Vault server, Kubernetes auth bootstrap, Vault Agent sidecar config, and the student API deployment together.
+
+Install it with:
+
+```sh
+helm upgrade --install student-api-vault ./helm/student-api-vault
+```
+
+The chart creates the required namespaces, deploys Vault, configures Kubernetes auth, seeds the DB credentials into Vault, and deploys the student API with a Vault Agent sidecar.
+
+## ArgoCD deployment
+
+ArgoCD application manifests live in `argocd/` for single-app deployment:
+
+```sh
+kubectl apply -f argocd/student-api-vault-helm-application.yaml -n argocd
+```
+
+Alternatively, deploy the existing manifest-based flow through ArgoCD:
+
+```sh
+kubectl apply -f argocd/student-api-vault-application.yaml -n argocd
+```
+
+Update the `targetRevision` field in those manifests if you want ArgoCD to track a different branch or tag.
+
 ## CI Pipeline
 
 The repository includes a GitHub Actions workflow that runs on a self-hosted runner.

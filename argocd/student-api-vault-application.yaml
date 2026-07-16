@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: student-api-vault
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nilkanthchakar/Nilkanth-sre-bootcamp.git
+    targetRevision: main
+    path: k8s-manifest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: student-api
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  ignoreDifferences:
+    - group: ""
+      kind: ConfigMap
+      name: vault-agent-config
+      jsonPointers:
+        - /data/vault-agent.hcl

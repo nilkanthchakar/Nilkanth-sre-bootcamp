@@ -1,0 +1,67 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: student-db-migrate
+  namespace: student-api
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      serviceAccountName: student-api-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: ubuntu:22.04
+          imagePullPolicy: IfNotPresent
+          command:
+            - bash
+            - -c
+          args:
+            - |
+              set -euo pipefail
+              export VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+
+              echo "installing dependencies (postgresql-client, curl, jq)..."
+              apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-client curl jq || true
+
+              echo "waiting for db to be ready..."
+              until pg_isready -h student-db -p 5432; do echo "waiting for db"; sleep 1; done
+
+              echo "authenticating to Vault via Kubernetes auth"
+              JWT=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              ROLE=student-api
+              VAULT_RESP=$(curl -s --request POST --data "{\"jwt\":\"${JWT}\",\"role\":\"${ROLE}\"}" ${VAULT_ADDR}/v1/auth/kubernetes/login)
+              TOKEN=$(echo "$VAULT_RESP" | jq -r '.auth.client_token')
+
+              if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+                echo "Vault authentication failed: $VAULT_RESP" >&2
+                exit 1
+              fi
+
+              echo "fetching DB credentials from Vault"
+              SECRET_PATH=${VAULT_ADDR}/v1/secret/data/student-api/db-credentials
+              curl -s --header "X-Vault-Token: $TOKEN" $SECRET_PATH | jq -r '.data.data | "SPRING_DATASOURCE_USERNAME=\(.username)\nSPRING_DATASOURCE_PASSWORD=\(.password)\nSPRING_DATASOURCE_URL=jdbc:postgresql://student-db:5432/studentdb"' > /tmp/creds.env
+
+              cat /tmp/creds.env
+
+              # load creds
+              set -a
+              . /tmp/creds.env
+              set +a
+
+              DB_NAME=$(echo "$SPRING_DATASOURCE_URL" | sed -E 's|.*\/([^\/?]+).*|\1|' || true)
+              DB_NAME=${DB_NAME:-studentdb}
+
+              echo "running migrations against $DB_NAME"
+              PGPASSWORD="$SPRING_DATASOURCE_PASSWORD" psql -h student-db -U "$SPRING_DATASOURCE_USERNAME" -d "$DB_NAME" -f /migrations/V1__create_students_table.sql
+
+      volumes:
+        - name: migrations
+          configMap:
+            name: student-db-migrations
+        - name: vault-secrets
+          emptyDir: {}
+        - name: vault-config
+          configMap:
+            name: vault-agent-config

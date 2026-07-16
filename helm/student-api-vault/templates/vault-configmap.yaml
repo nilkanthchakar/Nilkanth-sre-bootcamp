@@ -1,0 +1,12 @@
+{{- $agentConfig := .Values.vault.agentConfig -}}
+{{- $agentConfig = replace "__VAULT_ROLE__" .Values.vault.auth.role $agentConfig -}}
+{{- $agentConfig = replace "__VAULT_ADDR__" .Values.vault.address $agentConfig -}}
+{{- $agentConfig = replace "__VAULT_SECRET_PATH__" .Values.vault.secretPath $agentConfig -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-agent-config
+  namespace: {{ .Values.namespaces.studentApi }}
+data:
+  vault-agent.hcl: |-
+{{ $agentConfig | nindent 4 }}

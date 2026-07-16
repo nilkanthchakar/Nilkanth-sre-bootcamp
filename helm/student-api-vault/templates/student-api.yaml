@@ -1,0 +1,99 @@
+{{- if .Values.studentApi.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: student-db-migrations
+  namespace: {{ .Values.namespaces.studentApi }}
+data:
+  V1__create_students_table.sql: |-
+    CREATE TABLE IF NOT EXISTS students (
+        id BIGSERIAL PRIMARY KEY,
+        first_name VARCHAR(100) NOT NULL,
+        last_name VARCHAR(100) NOT NULL,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        enrolled_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
+    );
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: student-api
+  namespace: {{ .Values.namespaces.studentApi }}
+  labels:
+    app: student-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: student-api
+  template:
+    metadata:
+      labels:
+        app: student-api
+    spec:
+      nodeSelector:
+{{ toYaml .Values.studentApi.nodeSelector | nindent 8 }}
+      serviceAccountName: {{ .Values.studentApi.serviceAccountName }}
+      containers:
+        - name: student-api
+          image: {{ .Values.studentApi.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.studentApi.port }}
+          env:
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: SERVER_PORT
+              value: "{{ .Values.studentApi.port }}"
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+            - name: vault-secrets
+              mountPath: /vault/secrets
+        - name: vault-agent
+          image: {{ .Values.studentApi.agentImage }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - "agent"
+            - "-config=/vault/config/vault-agent.hcl"
+          env:
+            - name: VAULT_ADDR
+              value: {{ .Values.vault.address | quote }}
+          volumeMounts:
+            - name: vault-config
+              mountPath: /vault/config
+            - name: vault-secrets
+              mountPath: /vault/secrets
+      volumes:
+        - name: migrations
+          configMap:
+            name: student-db-migrations
+        - name: vault-secrets
+          emptyDir: {}
+        - name: vault-config
+          configMap:
+            name: vault-agent-config
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.studentApi.serviceAccountName }}
+  namespace: {{ .Values.namespaces.studentApi }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: student-api
+  namespace: {{ .Values.namespaces.studentApi }}
+  labels:
+    app: student-api
+spec:
+  type: ClusterIP
+  selector:
+    app: student-api
+  ports:
+    - port: {{ .Values.studentApi.port }}
+      targetPort: {{ .Values.studentApi.port }}
+      protocol: TCP
+      name: http
+{{- end }}

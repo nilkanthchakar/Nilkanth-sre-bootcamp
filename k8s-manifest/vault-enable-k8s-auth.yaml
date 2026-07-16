@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-enable-k8s-auth
+  namespace: vault
+spec:
+  template:
+    spec:
+      serviceAccountName: default
+      containers:
+        - name: enable-k8s-auth
+          image: hashicorp/vault:1.15.3
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              export VAULT_ADDR=http://vault.vault.svc.cluster.local:8200
+              echo "Configuring Vault Kubernetes auth"
+              vault login root
+              vault auth enable kubernetes || true
+              vault write auth/kubernetes/config \
+                token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                kubernetes_host="https://kubernetes.default.svc" \
+                kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+              cat <<'EOF' > /tmp/student-api-policy.hcl
+              path "secret/data/student-api/*" {
+                capabilities = ["read"]
+              }
+              EOF
+
+              vault policy write student-api /tmp/student-api-policy.hcl
+
+              vault write auth/kubernetes/role/student-api \
+                bound_service_account_names=student-api-sa \
+                bound_service_account_namespaces=student-api \
+                policies=student-api \
+                ttl=1h
+      restartPolicy: OnFailure
+  backoffLimit: 3
