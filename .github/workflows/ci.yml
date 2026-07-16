@@ -8,7 +8,17 @@ on:
       - 'Dockerfile'
       - 'Makefile'
       - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'Dockerfile'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
   workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 jobs:
   ci:
@@ -53,6 +63,7 @@ jobs:
           mvn -B org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7 -DskipTests -Dformat=ALL
 
       - name: Generate quality score
+        id: quality_score
         if: always()
         env:
           BUILD_STEP: ${{ steps.build.outcome }}
@@ -63,7 +74,6 @@ jobs:
           python - <<'PY'
           import os
           import re
-          import sys
           from pathlib import Path
 
           build_ok = os.getenv("BUILD_STEP") == "success"
@@ -85,6 +95,7 @@ jobs:
               score += 20
           if test_ok:
               score += 30
+
           if lint_ok:
               score += 20
           if vuln_ok:
@@ -93,15 +104,17 @@ jobs:
               penalty = severity_counts["CRITICAL"] * 10 + severity_counts["HIGH"] * 6 + severity_counts["MEDIUM"] * 3 + severity_counts["LOW"] * 1
               score += max(0, 30 - penalty)
 
-          summary = f"""# Quality Summary
-
-- Build: {'passed' if build_ok else 'failed'}
-- Tests: {'passed' if test_ok else 'failed'}
-- Lint: {'passed' if lint_ok else 'failed'}
-- Vulnerability scan: {'passed' if vuln_ok else 'failed'}
-- Vulnerabilities found: {total_vulns} (Critical: {severity_counts['CRITICAL']}, High: {severity_counts['HIGH']}, Medium: {severity_counts['MEDIUM']}, Low: {severity_counts['LOW']})
-- Overall quality score: {score}/100
-"""
+          summary_lines = [
+              "# Quality Summary",
+              "",
+              f"- Build: {'passed' if build_ok else 'failed'}",
+              f"- Tests: {'passed' if test_ok else 'failed'}",
+              f"- Lint: {'passed' if lint_ok else 'failed'}",
+              f"- Vulnerability scan: {'passed' if vuln_ok else 'failed'}",
+              f"- Vulnerabilities found: {total_vulns} (Critical: {severity_counts['CRITICAL']}, High: {severity_counts['HIGH']}, Medium: {severity_counts['MEDIUM']}, Low: {severity_counts['LOW']})",
+              f"- Overall quality score: {score}/100",
+          ]
+          summary = "\n".join(summary_lines)
 
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
               fh.write(summary)
@@ -110,6 +123,31 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"quality_score={score}\n")
 
+      - name: Enforce non-regression quality gate
+        if: always()
+        env:
+          CURRENT_SCORE: ${{ steps.quality_score.outputs.quality_score }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+
+          current_score = int(os.getenv("CURRENT_SCORE", "0"))
+          baseline_file = pathlib.Path(".quality-baseline")
+
+          if baseline_file.exists():
+              baseline_score = int(baseline_file.read_text(encoding="utf-8").strip())
+              print(f"Current score: {current_score}")
+              print(f"Baseline score: {baseline_score}")
+              if current_score < baseline_score:
+                  raise SystemExit(f"Quality regression: {current_score} is below baseline {baseline_score}")
+              baseline_file.write_text(str(current_score), encoding="utf-8")
+          else:
+              print("No baseline file found. Creating one from the current score.")
+              baseline_file.write_text(str(current_score), encoding="utf-8")
+
+          print("Quality gate passed: score is equal to or better than the baseline.")
+          PY
       - name: Upload vulnerability report
         if: always()
         uses: actions/upload-artifact@v4
