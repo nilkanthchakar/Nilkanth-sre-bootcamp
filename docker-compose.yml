@@ -15,6 +15,12 @@ services:
       - "5432:5432"
     volumes:
       - student-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-studentdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   student-api:
     image: student-api:0.1.0
@@ -27,13 +33,14 @@ services:
       - .env
     environment:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://student-db:5432/studentdb}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-mysecretpassword}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
       SERVER_PORT: ${SERVER_PORT:-8080}
     ports:
       - "8080:8080"
     depends_on:
-      - student-db
+      student-db:
+        condition: service_healthy
 
 volumes:
   student-db-data:
