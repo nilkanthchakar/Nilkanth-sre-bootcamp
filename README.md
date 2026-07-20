@@ -1,178 +1,165 @@
 # Student Management REST API
 
-A Spring Boot CRUD REST API for managing student records.
+A Spring Boot CRUD REST API for managing student records, with local Docker support, Kubernetes deployment, Vault-backed secrets, and Argo CD examples.
 
-## Features
+## What this repo supports
 
-- Add a new student
-- Get all students
-- Get a student by ID
-- Update student data
-- Delete a student record
-- API versioning (`/api/v1/...`)
-- Healthcheck endpoint (`/api/v1/health` and `/actuator/health`)
-- Flyway migrations for database schema
-- Environment-based database configuration
+After cloning the repository, you can:
+
+- run the app locally with Maven
+- run the app and PostgreSQL with Docker Compose
+- build and test the Java service
+- deploy the app to a local Kubernetes cluster
+- install Vault and bootstrap secrets with Helm
+- apply Argo CD manifests for GitOps-style deployment
 
 ## Prerequisites
 
-- Java 17 or newer
+Install these tools before starting:
+
+- Java 17+
 - Maven
-- Docker (optional, for PostgreSQL)
+- Docker Desktop or Docker Engine
+- Docker Compose
+- kubectl
+- Helm
+- Minikube (optional, for local Kubernetes)
+- Vagrant (optional, for the VM-based deployment)
 
-## Local setup
+## 1. Clone and prepare the environment
 
-1. Copy `.env.example` to `.env` and update values as needed.
+```bash
+git clone <your-repo-url>
+cd Nilkanth-sre-bootcamp
+make setup-env
+```
 
-2. Start the API and PostgreSQL together using Docker Compose:
+This creates a local `.env` file from `.env.example`. Review it and adjust values if needed.
 
-```sh
+## 2. Run locally with Maven
+
+```bash
+make build
+make run
+```
+
+The service will start on port `8080` by default.
+
+## 3. Run locally with Docker Compose
+
+```bash
 make compose-up
 ```
 
-3. When you are done, stop the stack:
+This starts the Spring Boot app and PostgreSQL together. When you are done:
 
-```sh
+```bash
 make compose-down
 ```
 
-4. If you need to rebuild after code changes:
+## 4. Build, test, and lint
 
-```sh
-make compose-build
-```
-
-## Environment variables
-
-- `SPRING_DATASOURCE_URL`
-- `SPRING_DATASOURCE_USERNAME`
-- `SPRING_DATASOURCE_PASSWORD`
-- `SERVER_PORT`
-
-## Build and test
-
-```sh
+```bash
 make build
 make test
 make lint
 ```
 
-## Docker
+## 5. Build the container image
 
-Build the Docker image:
-
-```sh
+```bash
 make docker-build
 ```
 
-Run the application using Docker Compose:
+## 6. Deploy to Kubernetes with Vault and Helm
 
-```sh
-make compose-up
+If you are using Minikube or any local Kubernetes cluster, start it first:
+
+```bash
+make minikube-start
+make minikube-add-labels
 ```
 
-Stop the Compose stack:
+Then install the Helm release:
 
-```sh
-make compose-down
+```bash
+make vault-helm-install
 ```
 
-If you want to run the API container directly:
+Verify the deployment:
 
-```sh
-docker run --rm -p 8080:8080 --env-file .env student-api:0.1.0
+```bash
+make kubectl-verify
 ```
 
-## Vagrant deployment
+To remove the Helm release:
 
-The production-like deployment uses Vagrant with Docker Compose and Nginx load balancing.
+```bash
+make vault-helm-uninstall
+```
 
-Start the Vagrant box:
+## 7. Argo CD deployment
 
-```sh
+Install Argo CD into the cluster:
+
+```bash
+make argocd-install
+make argocd-wait
+```
+
+Apply the example Argo CD applications:
+
+```bash
+make argocd-apply-app
+```
+
+Open the UI locally:
+
+```bash
+make argocd-port-forward
+```
+
+Then open https://localhost:8080 and sign in using the initial admin password:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 --decode
+```
+
+## 8. Static manifest deployment (alternative)
+
+If you want the older manifest-based workflow instead of Helm, run:
+
+```bash
+make kubectl-apply-manifests
+```
+
+## 9. Vagrant deployment (optional)
+
+```bash
 make vagrant-up
-```
-
-Provision the box and deploy services:
-
-```sh
 make vagrant-provision
 ```
 
-Access the API at:
+Stop or destroy it with:
 
-```sh
-http://localhost:8080/api/v1/students
-```
-
-Stop the Vagrant box:
-
-```sh
+```bash
 make vagrant-halt
-```
-
-Destroy the Vagrant box:
-
-```sh
 make vagrant-destroy
 ```
 
-## Helm-based Vault deployment
+## Environment variables
 
-A Helm chart is available at [helm/student-api-vault](helm/student-api-vault) to install the Vault server, Kubernetes auth bootstrap, Vault Agent sidecar config, and the student API deployment together.
+The application reads these values from `.env`:
 
-Install it with:
+- `SPRING_DATASOURCE_URL`
+- `SPRING_DATASOURCE_USERNAME`
+- `SPRING_DATASOURCE_PASSWORD`
+- `SERVER_PORT`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
 
-```sh
-helm upgrade --install student-api-vault ./helm/student-api-vault
-```
-
-The chart creates the required namespaces, deploys Vault, configures Kubernetes auth, seeds the DB credentials into Vault, and deploys the student API with a Vault Agent sidecar.
-
-## ArgoCD deployment
-
-ArgoCD application manifests live in `argocd/` for single-app deployment:
-
-```sh
-kubectl apply -f argocd/student-api-vault-helm-application.yaml -n argocd
-```
-
-Alternatively, deploy the existing manifest-based flow through ArgoCD:
-
-```sh
-kubectl apply -f argocd/student-api-vault-application.yaml -n argocd
-```
-
-Update the `targetRevision` field in those manifests if you want ArgoCD to track a different branch or tag.
-
-## CI Pipeline
-
-The repository includes a GitHub Actions workflow that runs on a self-hosted runner.
-
-The pipeline stages are:
-
-- Build API (`make build`)
-- Run tests (`make test`)
-- Perform code linting (`make lint`)
-- Docker Hub login and push
-
-The workflow triggers on changes to source code and build files only, including:
-
-- `src/**`
-- `pom.xml`
-- `Dockerfile`
-- `Makefile`
-
-It also supports manual dispatch from the GitHub Actions UI.
-
-### Docker Hub secrets
-
-Set the following repository secrets before running the workflow:
-
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-
-## API Endpoints
+## API endpoints
 
 - `GET /api/v1/students`
 - `GET /api/v1/students/{id}`
@@ -182,7 +169,7 @@ Set the following repository secrets before running the workflow:
 - `GET /api/v1/health`
 - `GET /actuator/health`
 
-## Student payload
+## Example payload
 
 ```json
 {
@@ -192,6 +179,68 @@ Set the following repository secrets before running the workflow:
 }
 ```
 
-## Postman Collection
+## Postman collection
 
-Import `postman/student-api.postman_collection.json` into Postman.
+Import [postman/student-api.postman_collection.json](postman/student-api.postman_collection.json) into Postman.
+
+## Observability stack (Prometheus, Loki, Grafana)
+
+This repository includes a Helm chart for a lightweight observability stack at `helm/observability`.
+
+Quick setup (assumes kubectl and helm are configured for your cluster):
+
+1. Label the node you want to host the dependent services (the "dependent_services" node):
+
+```bash
+kubectl label node <node-name> dependent_services=true
+```
+
+2. Install the chart:
+
+```bash
+helm upgrade --install observability ./helm/observability -n observability --create-namespace
+```
+
+3. Notes and configuration:
+- Promtail is configured to only collect logs from the `student-api` namespace by default. Adjust `applicationNamespace` in `helm/observability/values.yaml` if your application namespace differs.
+- The Postgres exporter uses a `DATA_SOURCE_NAME` environment value in the chart; you should replace the placeholder credentials with a Kubernetes `Secret` and patch `templates/postgres-exporter-deployment.yaml` to mount them as environment variables.
+- Prometheus scrapes the following targets by default: Prometheus itself, `node-exporter`, `kube-state-metrics`, `postgres-exporter`, and `blackbox-exporter`. The blackbox job probes `http://student-api:8080/health` by default — adjust as needed.
+- Grafana is provisioned with two data sources: Prometheus (`http://prometheus:9090`) and Loki (`http://loki:3100`). Grafana admin password is set to `admin` by default in the chart — change in production.
+
+4. Verifying:
+
+```bash
+kubectl get pods -n observability
+kubectl port-forward svc/grafana -n observability 3000:3000
+# open http://localhost:3000 (admin/admin)
+```
+
+If you want help wiring secrets for the Postgres exporter or customizing scrape configs, tell me which cluster environment you use and I can update the chart to reference an existing secret.
+
+### Using kube-prometheus-stack (Prometheus Operator)
+
+If you prefer the Prometheus Operator (`kube-prometheus-stack`) instead of the chart's built-in Prometheus and exporters, do the following:
+
+1. Install the `kube-prometheus-stack` from `prometheus-community` (example):
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack -n observability --create-namespace
+```
+
+2. Disable the chart's built-in Prometheus/exporters to avoid conflicts by setting the flag when installing or upgrading this chart:
+
+```bash
+helm upgrade --install observability ./helm/observability -n observability --set useKubePrometheusStack=true
+```
+
+3. If you want GitOps via Argo CD, add or update this Application manifest in `argocd/observability-helm-application.yaml` and apply it to the Argo CD control plane:
+
+```bash
+kubectl apply -f argocd/observability-helm-application.yaml -n argocd
+```
+
+4. Configure `ServiceMonitor`/`PodMonitor` and alerting rules inside the `kube-prometheus-stack` as needed to scrape `student-api`, Postgres exporter, and internal endpoints. I can help generate example `ServiceMonitor` manifests if you want.
+
+

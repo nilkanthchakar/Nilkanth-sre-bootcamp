@@ -38,6 +38,7 @@ vault:
       sink "file" {
         config = {
           path = "/vault/secrets/creds.env"
+          mode = 0666
         }
       }
     }

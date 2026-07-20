@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-helm
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nilkanthchakar/Nilkanth-sre-bootcamp.git
+    targetRevision: main
+    path: helm/observability
+    helm:
+      values: |
+        useKubePrometheusStack: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

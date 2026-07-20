@@ -4,6 +4,11 @@ kind: ConfigMap
 metadata:
   name: student-db-migrations
   namespace: {{ .Values.namespaces.studentApi }}
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 data:
   V1__create_students_table.sql: |-
     CREATE TABLE IF NOT EXISTS students (
@@ -79,6 +84,11 @@ kind: ServiceAccount
 metadata:
   name: {{ .Values.studentApi.serviceAccountName }}
   namespace: {{ .Values.namespaces.studentApi }}
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 ---
 apiVersion: v1
 kind: Service

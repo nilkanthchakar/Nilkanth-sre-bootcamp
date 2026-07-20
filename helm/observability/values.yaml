@@ -1,0 +1,28 @@
+namespace: observability
+
+# Node selector: the node that hosts dependent services should be labeled accordingly.
+nodeSelector:
+  dependent_services: "true"
+
+images:
+  prometheus: prom/prometheus:v2.44.0
+  grafana: grafana/grafana:9.5.2
+  loki: grafana/loki:2.8.2
+  promtail: grafana/promtail:2.8.2
+  nodeExporter: prom/node-exporter:v1.6.0
+  kubeStateMetrics: bitnami/kube-state-metrics:2.5.0
+  postgresExporter: wrouesnel/postgres_exporter:v0.8.0
+  blackboxExporter: prometheuscommunity/blackbox-exporter:v0.24.0
+
+applicationNamespace: student-api
+
+# postgres exporter connection DSN; recommend using Kubernetes Secret and referencing it when installing
+postgres:
+  serviceHost: student-db
+  servicePort: 5432
+
+# If you prefer the Prometheus Operator / kube-prometheus-stack, set this to true
+# to disable the chart's built-in Prometheus, node-exporter, kube-state-metrics
+# and blackbox-exporter resources to avoid conflicts. Install the operator
+# separately and configure it according to your needs.
+useKubePrometheusStack: false
