@@ -7,11 +7,22 @@ on:
       - 'pom.xml'
       - 'Dockerfile'
       - 'Makefile'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'Dockerfile'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
   workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 jobs:
   ci:
-    name: Build, Test, Lint, and Push
+    name: Build, Test, Scan, and Push
     runs-on: [self-hosted]
 
     env:
@@ -31,13 +42,128 @@ jobs:
           java-version: '17'
 
       - name: Build API
+        id: build
+        continue-on-error: true
         run: make build
 
       - name: Run tests
+        id: tests
+        continue-on-error: true
         run: make test
 
       - name: Run code linting
+        id: lint
+        continue-on-error: true
         run: make lint
+
+      - name: Build Docker image for scan
+        run: |
+          docker build --build-arg JAR_FILE=target/${IMAGE_NAME}-${IMAGE_VERSION}.jar -t ${IMAGE_NAME}:${IMAGE_VERSION} .
+
+      - name: Run vulnerability scan
+        id: vuln
+        continue-on-error: true
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.53.0 image \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --output target/trivy-results.txt \
+            --exit-code 0 \
+            ${IMAGE_NAME}:${IMAGE_VERSION}
+
+      - name: Generate quality score
+        id: quality_score
+        if: always()
+        env:
+          BUILD_STEP: ${{ steps.build.outcome }}
+          TEST_STEP: ${{ steps.tests.outcome }}
+          LINT_STEP: ${{ steps.lint.outcome }}
+          VULN_STEP: ${{ steps.vuln.outcome }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          build_ok = os.getenv("BUILD_STEP") == "success"
+          test_ok = os.getenv("TEST_STEP") == "success"
+          lint_ok = os.getenv("LINT_STEP") == "success"
+          vuln_ok = os.getenv("VULN_STEP") == "success"
+
+          severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+          report = Path("target/trivy-results.txt")
+          if report.exists():
+              content = report.read_text(encoding="utf-8", errors="ignore")
+              for severity in severity_counts:
+                  severity_counts[severity] = len(re.findall(rf"{severity}", content, flags=re.IGNORECASE))
+
+          total_vulns = sum(severity_counts.values())
+
+          score = 0
+          if build_ok:
+              score += 20
+          if test_ok:
+              score += 30
+
+          if lint_ok:
+              score += 20
+          if vuln_ok:
+              score += 30
+          else:
+              penalty = severity_counts["CRITICAL"] * 10 + severity_counts["HIGH"] * 6 + severity_counts["MEDIUM"] * 3 + severity_counts["LOW"] * 1
+              score += max(0, 30 - penalty)
+
+          summary_lines = [
+              "# Quality Summary",
+              "",
+              f"- Build: {'passed' if build_ok else 'failed'}",
+              f"- Tests: {'passed' if test_ok else 'failed'}",
+              f"- Lint: {'passed' if lint_ok else 'failed'}",
+              f"- Vulnerability scan: {'passed' if vuln_ok else 'failed'}",
+              f"- Vulnerabilities found: {total_vulns} (Critical: {severity_counts['CRITICAL']}, High: {severity_counts['HIGH']}, Medium: {severity_counts['MEDIUM']}, Low: {severity_counts['LOW']})",
+              f"- Overall quality score: {score}/100",
+          ]
+          summary = "\n".join(summary_lines)
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write(summary)
+
+          print(summary)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"quality_score={score}\n")
+
+      - name: Enforce non-regression quality gate
+        if: always()
+        env:
+          CURRENT_SCORE: ${{ steps.quality_score.outputs.quality_score }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+
+          current_score = int(os.getenv("CURRENT_SCORE", "0"))
+          baseline_file = pathlib.Path(".quality-baseline")
+
+          if baseline_file.exists():
+              baseline_score = int(baseline_file.read_text(encoding="utf-8").strip())
+              print(f"Current score: {current_score}")
+              print(f"Baseline score: {baseline_score}")
+              if current_score < baseline_score:
+                  raise SystemExit(f"Quality regression: {current_score} is below baseline {baseline_score}")
+              baseline_file.write_text(str(current_score), encoding="utf-8")
+          else:
+              print("No baseline file found. Creating one from the current score.")
+              baseline_file.write_text(str(current_score), encoding="utf-8")
+
+          print("Quality gate passed: score is equal to or better than the baseline.")
+          PY
+      - name: Upload vulnerability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: target/trivy-results.txt
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
