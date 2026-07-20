@@ -39,6 +39,29 @@ spec:
       nodeSelector:
 {{ toYaml .Values.studentApi.nodeSelector | nindent 8 }}
       serviceAccountName: {{ .Values.studentApi.serviceAccountName }}
+      initContainers:
+        - name: migrate
+          image: {{ .Values.postgres.image }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: student-db-credentials
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h {{ .Values.postgres.serviceName }} -p 5432 -U "$POSTGRES_USER"; do
+                echo "waiting for database";
+                sleep 2;
+              done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                -h {{ .Values.postgres.serviceName }} \
+                -U "$POSTGRES_USER" \
+                -d "$POSTGRES_DB" \
+                -f /migrations/V1__create_students_table.sql
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
       containers:
         - name: student-api
           image: {{ .Values.studentApi.image }}

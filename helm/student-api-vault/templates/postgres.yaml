@@ -1,0 +1,76 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: student-db-credentials
+  namespace: {{ .Values.namespaces.studentApi }}
+type: Opaque
+stringData:
+  POSTGRES_DB: {{ .Values.postgres.database | quote }}
+  POSTGRES_USER: {{ .Values.vault.seed.username | quote }}
+  POSTGRES_PASSWORD: {{ .Values.vault.seed.password | quote }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: student-db-pvc
+  namespace: {{ .Values.namespaces.studentApi }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.postgres.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: student-db
+  namespace: {{ .Values.namespaces.studentApi }}
+  labels:
+    app: student-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: student-db
+  template:
+    metadata:
+      labels:
+        app: student-db
+    spec:
+      nodeSelector:
+{{ toYaml .Values.postgres.nodeSelector | nindent 8 }}
+      containers:
+        - name: student-db
+          image: {{ .Values.postgres.image }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: student-db-credentials
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: student-db-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: student-db-data
+          persistentVolumeClaim:
+            claimName: student-db-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.postgres.serviceName }}
+  namespace: {{ .Values.namespaces.studentApi }}
+  labels:
+    app: student-db
+spec:
+  type: ClusterIP
+  selector:
+    app: student-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+{{- end }}

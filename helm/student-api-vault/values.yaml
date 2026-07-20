@@ -70,3 +70,12 @@ studentApi:
     type: application
   port: 8080
   agentImage: hashicorp/vault:1.15.3
+
+postgres:
+  enabled: true
+  image: postgres:16
+  serviceName: student-db
+  database: studentdb
+  nodeSelector:
+    type: database
+  storage: 1Gi
