@@ -67,15 +67,15 @@ metadata:
 spec:
   jobName: student-api-health
   interval: 30s
-  probeTimeout: 10s
+  scrapeTimeout: 10s
   module: http_2xx
   prober:
-    service:
-      name: blackbox-exporter
-      port: http
-  target:
-    http:
-      url: http://student-api.student-api.svc.cluster.local:8080/actuator/health
+    # The Prometheus Operator Probe CRD requires address:port, without a scheme.
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - http://student-api.student-api.svc.cluster.local:8080/actuator/health
 
 ---
 apiVersion: monitoring.coreos.com/v1

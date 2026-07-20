@@ -9,10 +9,11 @@ images:
   grafana: grafana/grafana:9.5.2
   loki: grafana/loki:2.8.2
   promtail: grafana/promtail:2.8.2
-  nodeExporter: prom/node-exporter:v1.6.0
-  kubeStateMetrics: bitnami/kube-state-metrics:2.5.0
+  # Official multi-architecture images. These work on the ARM64 Minikube nodes.
+  nodeExporter: quay.io/prometheus/node-exporter:v1.12.1-distroless
+  kubeStateMetrics: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1
   postgresExporter: wrouesnel/postgres_exporter:v0.8.0
-  blackboxExporter: prometheuscommunity/blackbox-exporter:v0.24.0
+  blackboxExporter: prom/blackbox-exporter:v0.25.0
 
 applicationNamespace: student-api
 
