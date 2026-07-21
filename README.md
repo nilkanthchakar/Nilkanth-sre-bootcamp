@@ -186,6 +186,7 @@ Import [postman/student-api.postman_collection.json](postman/student-api.postman
 ## Observability stack (Prometheus, Loki, Grafana)
 
 This repository includes a Helm chart for a lightweight observability stack at `helm/observability`.
+For the full install, operator, Argo CD, and validation flow, see [docs/OBSERVABILITY-DEPLOYMENT.md](docs/OBSERVABILITY-DEPLOYMENT.md).
 
 Quick setup (assumes kubectl and helm are configured for your cluster):
 
@@ -204,8 +205,8 @@ helm upgrade --install observability ./helm/observability -n observability --cre
 3. Notes and configuration:
 - Promtail is configured to only collect logs from the `student-api` namespace by default. Adjust `applicationNamespace` in `helm/observability/values.yaml` if your application namespace differs.
 - The Postgres exporter uses a `DATA_SOURCE_NAME` environment value in the chart; you should replace the placeholder credentials with a Kubernetes `Secret` and patch `templates/postgres-exporter-deployment.yaml` to mount them as environment variables.
-- Prometheus scrapes the following targets by default: Prometheus itself, `node-exporter`, `kube-state-metrics`, `postgres-exporter`, and `blackbox-exporter`. The blackbox job probes `http://student-api:8080/health` by default — adjust as needed.
-- Grafana is provisioned with two data sources: Prometheus (`http://prometheus:9090`) and Loki (`http://loki:3100`). Grafana admin password is set to `admin` by default in the chart — change in production.
+- Prometheus scrapes the app, node-exporter, kube-state-metrics, Postgres exporter, and blackbox-exporter by default. The blackbox job probes the student API health endpoint unless you change `blackbox.targets` in `helm/observability/values.yaml`.
+- Grafana is provisioned with Prometheus and Loki data sources, and the chart includes dashboards and alert rules for node, DB, kube-state, blackbox, application logs, latency, error rate, and restart events.
 
 4. Verifying:
 
@@ -241,6 +242,4 @@ helm upgrade --install observability ./helm/observability -n observability --set
 kubectl apply -f argocd/observability-helm-application.yaml -n argocd
 ```
 
-4. Configure `ServiceMonitor`/`PodMonitor` and alerting rules inside the `kube-prometheus-stack` as needed to scrape `student-api`, Postgres exporter, and internal endpoints. I can help generate example `ServiceMonitor` manifests if you want.
-
-
+4. The chart creates the `ServiceMonitor`, `Probe`, and `PrometheusRule` resources needed by `kube-prometheus-stack` to scrape `student-api`, Postgres exporter, and the blackbox targets.

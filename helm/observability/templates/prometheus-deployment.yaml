@@ -26,10 +26,15 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/prometheus/
+            - name: rules
+              mountPath: /etc/prometheus/rules
       volumes:
         - name: config
           configMap:
             name: prometheus-config
+        - name: rules
+          configMap:
+            name: prometheus-alert-rules
 
 ---
 apiVersion: v1

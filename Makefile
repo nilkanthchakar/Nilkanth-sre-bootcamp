@@ -7,13 +7,15 @@ IMAGE_TAG ?= $(IMAGE_NAME):$(IMAGE_VERSION)
 KUBECTL ?= kubectl
 HELM ?= helm
 ARGOCD_NAMESPACE ?= argocd
+OBSERVABILITY_NAMESPACE ?= observability
 VAULT_NAMESPACE ?= vault
 STUDENT_API_NAMESPACE ?= student-api
 VAULT_RELEASE ?= student-api-vault
 VAULT_SERVICE_ACCOUNT ?= vault-auth
 STUDENT_API_SERVICE_ACCOUNT ?= student-api-sa
+KUBE_PROMETHEUS_RELEASE ?= kube-prometheus-stack
 
-.PHONY: help build run migrate test docker-build compose-build compose-up compose-down clean lint setup-env vagrant-up vagrant-provision vagrant-halt vagrant-destroy deploy-vagrant minikube-start minikube-add-labels minikube-stop minikube-delete argocd-install argocd-wait argocd-port-forward argocd-apply-app argocd-delete-app vault-helm-install vault-helm-uninstall kubectl-apply-manifests kubectl-verify
+.PHONY: help build run migrate test docker-build compose-build compose-up compose-down clean lint setup-env vagrant-up vagrant-provision vagrant-halt vagrant-destroy deploy-vagrant minikube-start minikube-image-build minikube-add-labels minikube-stop minikube-delete argocd-install argocd-wait argocd-port-forward argocd-apply-app argocd-apply-legacy-vault-app argocd-delete-app kube-prometheus-install cluster-deploy vault-helm-install vault-helm-uninstall kubectl-apply-manifests kubectl-verify
 
 help:
 	@echo "Available targets:"
@@ -27,8 +29,10 @@ help:
 	@echo "  make compose-down         Stop the local Docker Compose stack"
 	@echo "  make docker-build         Build the Docker image"
 	@echo "  make minikube-start       Start a local Kubernetes cluster"
+	@echo "  make minikube-image-build Build the API image on every Minikube node"
 	@echo "  make argocd-install       Install Argo CD into the cluster"
 	@echo "  make argocd-apply-app     Apply the Argo CD application manifests"
+	@echo "  make cluster-deploy       Start Minikube, install Argo CD/monitoring, and deploy the API"
 	@echo "  make vault-helm-install   Install Vault and the app via Helm"
 	@echo "  make kubectl-apply-manifests Apply the static Kubernetes manifests"
 	@echo "  make vagrant-up           Start the Vagrant deployment"
@@ -101,11 +105,15 @@ minikube-start:
 	@echo "Starting Minikube cluster"
 	minikube start --driver=docker --nodes=4
 
+minikube-image-build:
+	@echo "Building $(IMAGE_TAG) on every Minikube node"
+	minikube image build --all -t $(IMAGE_TAG) .
+
 minikube-add-labels:
 	@echo "Adding labels to Minikube nodes"
-	kubectl label node minikube-m02 type=application
-	kubectl label node minikube-m03 type=database
-	kubectl label node minikube-m04 type=dependent_services
+	kubectl label node minikube-m02 type=application --overwrite
+	kubectl label node minikube-m03 type=database --overwrite
+	kubectl label node minikube-m04 type=dependent_services dependent_services=true --overwrite
 
 minikube-stop:
 	@echo "Stopping Minikube cluster"
@@ -118,7 +126,7 @@ minikube-delete:
 argocd-install:
 	@echo "Installing Argo CD"
 	$(KUBECTL) create namespace $(ARGOCD_NAMESPACE) --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	$(KUBECTL) apply -n $(ARGOCD_NAMESPACE) -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+	$(KUBECTL) apply --server-side --force-conflicts -n $(ARGOCD_NAMESPACE) -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
 argocd-wait:
 	@echo "Waiting for Argo CD server to be ready"
@@ -130,16 +138,34 @@ argocd-port-forward:
 	$(KUBECTL) port-forward svc/argocd-server -n $(ARGOCD_NAMESPACE) 8080:443
 
 argocd-apply-app:
-	@echo "Applying Argo CD application manifests"
+	@echo "Applying Argo CD applications for the Vault-backed API and observability"
 	$(KUBECTL) apply -f argocd/student-api-vault-helm-application.yaml -n $(ARGOCD_NAMESPACE)
-	$(KUBECTL) apply -f argocd/student-api-vault-application.yaml -n $(ARGOCD_NAMESPACE)
 	$(KUBECTL) apply -f argocd/observability-helm-application.yaml -n $(ARGOCD_NAMESPACE)
+
+argocd-apply-legacy-vault-app:
+	@echo "Applying the legacy static-manifest Vault application"
+	$(KUBECTL) apply -f argocd/student-api-vault-application.yaml -n $(ARGOCD_NAMESPACE)
 
 argocd-delete-app:
 	@echo "Deleting Argo CD application resources"
 	$(KUBECTL) delete -f argocd/student-api-vault-helm-application.yaml -n $(ARGOCD_NAMESPACE) --ignore-not-found
 	$(KUBECTL) delete -f argocd/student-api-vault-application.yaml -n $(ARGOCD_NAMESPACE) --ignore-not-found
 	$(KUBECTL) delete -f argocd/observability-helm-application.yaml -n $(ARGOCD_NAMESPACE) --ignore-not-found
+
+kube-prometheus-install:
+	@echo "Installing kube-prometheus-stack required by the observability Argo CD application"
+	$(HELM) repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	$(HELM) repo update
+	$(HELM) upgrade --install $(KUBE_PROMETHEUS_RELEASE) prometheus-community/kube-prometheus-stack --namespace $(OBSERVABILITY_NAMESPACE) --create-namespace
+
+cluster-deploy: minikube-start minikube-image-build minikube-add-labels argocd-install argocd-wait kube-prometheus-install argocd-apply-app
+	@echo "Waiting for Argo CD to synchronize the Vault-backed Student API chart"
+	$(KUBECTL) wait --for=jsonpath='{.status.sync.status}'=Synced application/student-api-vault-helm -n $(ARGOCD_NAMESPACE) --timeout=600s
+	@echo "Waiting for Student API resources to become ready"
+	$(KUBECTL) rollout status deployment/vault -n $(VAULT_NAMESPACE) --timeout=300s
+	$(KUBECTL) rollout status deployment/student-db -n $(STUDENT_API_NAMESPACE) --timeout=300s
+	$(KUBECTL) rollout status deployment/student-api -n $(STUDENT_API_NAMESPACE) --timeout=300s
+	@echo "Cluster deployment complete. Run 'make kubectl-verify' for a status summary."
 
 vault-helm-install:
 	@echo "Installing Vault and the student API through Helm"
@@ -174,4 +200,4 @@ kubectl-verify:
 	@echo "Checking pod and job status"
 	$(KUBECTL) get pods -n $(VAULT_NAMESPACE) || true
 	$(KUBECTL) get pods -n $(STUDENT_API_NAMESPACE) || true
-	$(KUBECTL) get jobs -n $(VAULT_NAMESPACE) || true	
+	$(KUBECTL) get jobs -n $(VAULT_NAMESPACE) || true

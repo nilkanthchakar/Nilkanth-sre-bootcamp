@@ -16,11 +16,44 @@ images:
   blackboxExporter: prom/blackbox-exporter:v0.25.0
 
 applicationNamespace: student-api
+applicationServiceName: student-api
+applicationMetricsPath: /actuator/prometheus
 
-# postgres exporter connection DSN; recommend using Kubernetes Secret and referencing it when installing
+blackbox:
+  targets:
+    - name: student-api
+      url: http://student-api.student-api.svc.cluster.local:8080/actuator/health
+    - name: grafana
+      url: http://grafana.observability.svc.cluster.local:3000/api/health
+    - name: prometheus
+      url: http://prometheus.observability.svc.cluster.local:9090/-/ready
+
+alerts:
+  cpuUtilizationThreshold: 85
+  diskUtilizationThreshold: 85
+  errorRateThreshold: 0.05
+  requestCountThreshold: 500
+  latencyThresholdSeconds:
+    p90: 0.5
+    p95: 1.0
+    p99: 2.0
+  restartWindow: 10m
+  databaseRestart:
+    namespace: student-api
+    podRegex: student-db-.*
+  vaultRestart:
+    namespace: vault
+    podRegex: vault-.*
+  argocdRestart:
+    namespace: argocd
+    podRegex: argocd-.*
+
+# PostgreSQL exporter connection. For production, provide an existing Secret instead
+# of keeping credentials in this development chart values file.
 postgres:
-  serviceHost: student-db
-  servicePort: 5432
+  existingSecret: ""
+  secretName: pg-exporter-creds
+  dataSourceName: postgresql://postgres:mysecretpassword@student-db.student-api.svc.cluster.local:5432/studentdb?sslmode=disable
 
 # If you prefer the Prometheus Operator / kube-prometheus-stack, set this to true
 # to disable the chart's built-in Prometheus, node-exporter, kube-state-metrics

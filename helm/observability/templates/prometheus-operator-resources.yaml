@@ -58,6 +58,26 @@ spec:
 
 ---
 apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: student-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    release: {{ .Release.Name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.applicationServiceName }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.applicationNamespace }}
+  endpoints:
+    - port: http
+      path: {{ .Values.applicationMetricsPath }}
+      interval: 30s
+
+---
+apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
   name: student-api-health
@@ -75,7 +95,9 @@ spec:
   targets:
     staticConfig:
       static:
-        - http://student-api.student-api.svc.cluster.local:8080/actuator/health
+{{- range .Values.blackbox.targets }}
+        - {{ .url | quote }}
+{{- end }}
 
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -96,4 +118,103 @@ spec:
     - port: http
       interval: 30s
       honorLabels: true
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: observability-alerts
+  namespace: {{ .Values.namespace }}
+  labels:
+    release: {{ .Release.Name }}
+spec:
+  groups:
+    - name: observability.rules
+      rules:
+        - alert: NodeCpuUtilizationHigh
+          expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > {{ .Values.alerts.cpuUtilizationThreshold }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: High node CPU utilization
+            description: Node CPU utilization is above {{ .Values.alerts.cpuUtilizationThreshold }}%.
+
+        - alert: NodeDiskUtilizationHigh
+          expr: 100 * (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|squashfs|overlay",mountpoint!~"/(run|var/lib/kubelet).*"} / node_filesystem_size_bytes{fstype!~"tmpfs|squashfs|overlay",mountpoint!~"/(run|var/lib/kubelet).*"})) > {{ .Values.alerts.diskUtilizationThreshold }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: High node disk utilization
+            description: Node disk utilization is above {{ .Values.alerts.diskUtilizationThreshold }}%.
+
+        - alert: StudentApiErrorRateHigh
+          expr: sum(rate(http_server_requests_seconds_count{job="{{ .Values.applicationServiceName }}",status=~"5..",uri!~"/actuator.*"}[10m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job="{{ .Values.applicationServiceName }}",uri!~"/actuator.*"}[10m])), 1) > {{ .Values.alerts.errorRateThreshold }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Student API error rate is elevated
+            description: The 5xx error rate over the last 10 minutes is above {{ .Values.alerts.errorRateThreshold }}.
+
+        - alert: StudentApiLatencyP90High
+          expr: histogram_quantile(0.90, sum by (le) (rate(http_server_requests_seconds_bucket{job="{{ .Values.applicationServiceName }}",uri!~"/actuator.*"}[10m]))) > {{ .Values.alerts.latencyThresholdSeconds.p90 }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Student API p90 latency is high
+            description: p90 latency is above {{ .Values.alerts.latencyThresholdSeconds.p90 }}s.
+
+        - alert: StudentApiLatencyP95High
+          expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job="{{ .Values.applicationServiceName }}",uri!~"/actuator.*"}[10m]))) > {{ .Values.alerts.latencyThresholdSeconds.p95 }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Student API p95 latency is high
+            description: p95 latency is above {{ .Values.alerts.latencyThresholdSeconds.p95 }}s.
+
+        - alert: StudentApiLatencyP99High
+          expr: histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job="{{ .Values.applicationServiceName }}",uri!~"/actuator.*"}[10m]))) > {{ .Values.alerts.latencyThresholdSeconds.p99 }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Student API p99 latency is high
+            description: p99 latency is above {{ .Values.alerts.latencyThresholdSeconds.p99 }}s.
+
+        - alert: StudentApiRequestVolumeHigh
+          expr: increase(http_server_requests_seconds_count{job="{{ .Values.applicationServiceName }}",uri!~"/actuator.*"}[10m]) > {{ .Values.alerts.requestCountThreshold }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Student API request volume is high
+            description: More than {{ .Values.alerts.requestCountThreshold }} requests were observed in the last 10 minutes.
+
+        - alert: DatabasePodRestarted
+          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ .Values.alerts.databaseRestart.namespace }}",pod=~"{{ .Values.alerts.databaseRestart.podRegex }}"}[{{ .Values.alerts.restartWindow }}]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: Database pod restarted
+            description: A database pod restarted within the last {{ .Values.alerts.restartWindow }}.
+
+        - alert: VaultPodRestarted
+          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ .Values.alerts.vaultRestart.namespace }}",pod=~"{{ .Values.alerts.vaultRestart.podRegex }}"}[{{ .Values.alerts.restartWindow }}]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: Vault pod restarted
+            description: A Vault pod restarted within the last {{ .Values.alerts.restartWindow }}.
+
+        - alert: ArgoCDPodRestarted
+          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ .Values.alerts.argocdRestart.namespace }}",pod=~"{{ .Values.alerts.argocdRestart.podRegex }}"}[{{ .Values.alerts.restartWindow }}]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: ArgoCD pod restarted
+            description: An Argo CD pod restarted within the last {{ .Values.alerts.restartWindow }}.
 {{- end }}

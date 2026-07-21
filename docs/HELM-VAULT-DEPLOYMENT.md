@@ -46,6 +46,10 @@ kubectl apply -f argocd/student-api-vault-helm-application.yaml -n argocd
 
 ArgoCD will sync and create namespaces automatically when `CreateNamespace=true` is enabled.
 
+## Observability (optional)
+
+This repository includes an observability Helm chart at `helm/observability`. You can manage it via Argo CD similar to the Vault chart. See `docs/OBSERVABILITY-DEPLOYMENT.md` and `docs/ARGOCD-SETUP.md` for details on installing the operator, applying the Argo CD Application, and configuring ServiceMonitors/Probes.
+
 ## Verify the deployment
 
 Check that the resources came up successfully:

@@ -21,7 +21,7 @@ spec:
             - name: DATA_SOURCE_NAME
               valueFrom:
                 secretKeyRef:
-                  name: pg-exporter-creds
+                  name: {{ .Values.postgres.existingSecret | default .Values.postgres.secretName }}
                   key: DATA_SOURCE_NAME
           ports:
             - containerPort: 9187

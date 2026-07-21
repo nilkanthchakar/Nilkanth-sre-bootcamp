@@ -26,7 +26,16 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info
+        include: health, info, metrics, prometheus
+  endpoint:
+    prometheus:
+      access: unrestricted
   health:
     db:
       enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      sla:
+        http.server.requests: 100ms, 250ms, 500ms, 1s, 2s, 5s
